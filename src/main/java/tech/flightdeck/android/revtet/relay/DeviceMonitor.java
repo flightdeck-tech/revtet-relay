@@ -28,7 +28,6 @@ public class DeviceMonitor implements UsbServicesListener {
     public DeviceMonitor() throws UsbException {
         UsbServices services = UsbHostManager.getUsbServices();
         services.addUsbServicesListener(this);
-//        services.getRootUsbHub().getAttachedUsbDevices();
     }
 
     public void usbDeviceAttached(UsbServicesEvent usbServicesEvent) {
@@ -37,7 +36,7 @@ public class DeviceMonitor implements UsbServicesListener {
         try {
             handleDevice(device);
         } catch (UsbException e) {
-            log.error("Failed to handle usb device.{}", device);
+            log.error("Failed to handle usb device.{}", device, e);
         }
     }
 
