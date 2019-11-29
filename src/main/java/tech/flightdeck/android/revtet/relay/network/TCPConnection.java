@@ -12,7 +12,7 @@ import java.util.Random;
 
 @Slf4j
 public class TCPConnection extends AbstractConnection implements PacketSource {
-    public static final int IDLE_TIMEOUT = 300000;
+    public static final int IDLE_TIMEOUT = 30000;
     private static final int MTU = 0x4000;
     private static final int MAX_PAYLOAD_SIZE = MTU - 20 - 20;
 
@@ -101,6 +101,7 @@ public class TCPConnection extends AbstractConnection implements PacketSource {
     @Override
     public void disconnect() {
         log.debug("Close");
+        log.info("Closing TCP connection with state {}", state);
         selectionKey.cancel();
         try {
             channel.close();
@@ -440,7 +441,11 @@ public class TCPConnection extends AbstractConnection implements PacketSource {
 
     @Override
     public boolean isExpired() {
-        return System.currentTimeMillis() >= idleSince + IDLE_TIMEOUT;
+        return System.currentTimeMillis() >= idleSince + IDLE_TIMEOUT && !available();
+    }
+
+    private boolean available() {
+        return this.channel.isOpen() && this.channel.isConnected() && this.state == State.ESTABLISHED;
     }
 
     private String numbers() {

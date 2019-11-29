@@ -60,6 +60,9 @@ public class Router {
         if (protocol == IPv4Header.Protocol.TCP) {
             return new TCPConnection(id, client, selector, iPv4Header, (TCPHeader) transportHeader);
         }
+        if (protocol == IPv4Header.Protocol.ICMP) {
+            return new ICMPConnection(id, client, iPv4Header, (ICMPHeader) transportHeader);
+        }
         throw new UnsupportedOperationException("Unsupported protocol: " + protocol);
     }
 

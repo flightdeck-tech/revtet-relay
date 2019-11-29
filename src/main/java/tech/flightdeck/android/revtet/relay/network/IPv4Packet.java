@@ -40,6 +40,8 @@ public class IPv4Packet {
                 return new UDPHeader(getRawTransport());
             case TCP:
                 return new TCPHeader(getRawTransport());
+            case ICMP:
+                return new ICMPHeader(getRawTransport());
             default:
                 throw new AssertionError("Should be unreachable if ipv4Header.isSupported()");
         }

@@ -115,11 +115,13 @@ public class Client {
     }
 
     public boolean sendToClient(IPv4Packet packet) {
-        if (networkToClient.remaining() < packet.getRawLength()) {
-            log.warn("Client buffer full");
-            return false;
+        synchronized (networkToClient) {
+            if (networkToClient.remaining() < packet.getRawLength()) {
+                log.warn("Client buffer full");
+                return false;
+            }
+            networkToClient.readFrom(packet.getRaw());
         }
-        networkToClient.readFrom(packet.getRaw());
         //interests
         return true;
     }

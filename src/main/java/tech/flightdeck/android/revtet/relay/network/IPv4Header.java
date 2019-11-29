@@ -4,7 +4,7 @@ import java.nio.ByteBuffer;
 
 public class IPv4Header {
     public enum Protocol {
-        TCP(6), UDP(17), OTHER(-1);
+        ICMP(1), TCP(6), UDP(17), OTHER(-1);
 
         private final int number;
 
@@ -22,6 +22,9 @@ public class IPv4Header {
             }
             if (number == UDP.number) {
                 return UDP;
+            }
+            if (number == ICMP.number) {
+                return ICMP;
             }
             return OTHER;
         }

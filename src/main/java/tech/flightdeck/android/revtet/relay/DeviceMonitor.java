@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 public class DeviceMonitor implements UsbServicesListener {
@@ -31,7 +32,7 @@ public class DeviceMonitor implements UsbServicesListener {
 
     private static final int CLEANING_INTERVAL = 60 * 1000;
 
-    private Map<UsbDevice, Accessory> accessoryMap = new Hashtable<>();
+    private Map<UsbDevice, Accessory> accessoryMap = new ConcurrentHashMap<>();
 
     private Selector selector;
     private Thread selectorThread;
@@ -56,11 +57,10 @@ public class DeviceMonitor implements UsbServicesListener {
                     Set<SelectionKey> selectedKeys = selector.selectedKeys();
 
                     long now = System.currentTimeMillis();
-                    if (now >= nextCleaningDeadline || selectedKeys.isEmpty()) {
+                    if (now >= nextCleaningDeadline) {
                         cleanUp();
                         nextCleaningDeadline = now + CLEANING_INTERVAL;
                     }
-
                     for (SelectionKey selectedKey : selectedKeys) {
                         SelectionHandler selectionHandler = (SelectionHandler)selectedKey.attachment();
                         selectionHandler.onReady(selectedKey);
@@ -70,7 +70,7 @@ public class DeviceMonitor implements UsbServicesListener {
             } catch (IOException e) {
                 log.error("Error in selector thread.", e);
             }
-        });
+        }, "Selector");
         selectorThread.start();
     }
 

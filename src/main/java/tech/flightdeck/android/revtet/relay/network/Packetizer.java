@@ -40,6 +40,13 @@ public class Packetizer {
         return inflate();
     }
 
+    public IPv4Packet packetize(ByteBuffer src, int offset, int len) throws IOException {
+        payloadBuffer.limit(len).position(0);
+        payloadBuffer.put(src.array(), src.arrayOffset() + offset, len);
+        payloadBuffer.flip();
+        return inflate();
+    }
+
     public IPv4Packet packetize(ReadableByteChannel channel) throws IOException {
         return packetize(channel, payloadBuffer.capacity());
     }

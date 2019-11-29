@@ -18,7 +18,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 
 @Slf4j
 public class Accessory implements ByteChannel {
-    private static final int BUF_SIZE = 65535;
+    private static final int BUF_SIZE = 1048576;
 
     private static final byte ACCESSORY_EP_IN = (byte)0x81;
     private static final byte ACCESSORY_EP_OUT = (byte)0x01;
@@ -85,12 +85,10 @@ public class Accessory implements ByteChannel {
                     log.error("Failed to close usb.", ioe);
                 }
             }
-        });
+        }, String.format("USB Reader %d", client.getId()));
         readThread.start();
 
         writeThread = new Thread(() -> {
-            byte[] buf = new byte[BUF_SIZE];
-            int len;
             try {
                 while (running) {
                     UsbIrp irp = writeQueue.take();
@@ -104,7 +102,34 @@ public class Accessory implements ByteChannel {
                     log.error("Failed to close usb.", e1);
                 }
             }
-        });
+
+//            byte[] buf;
+//            int len;
+//            while (running) {
+//                buf = null;
+//                synchronized (writeBuffer) {
+//                    writeBuffer.flip();
+//                    if (writeBuffer.hasRemaining()) {
+//                        buf = new byte[writeBuffer.remaining()];
+//                        writeBuffer.get(buf);
+//                    }
+//                    writeBuffer.clear();
+//                    writeBuffer.notify();
+//                }
+//                if (buf != null) {
+//                    try {
+//                        pipeOut.syncSubmit(buf);
+//                    } catch (UsbException e) {
+//                        log.error("Failed to write usb", e);
+//                        try {
+//                            close();
+//                        } catch (IOException e1) {
+//
+//                        }
+//                    }
+//                }
+//            }
+        }, String.format("USB Writer %d", client.getId()));
         writeThread.start();
     }
 
@@ -134,27 +159,42 @@ public class Accessory implements ByteChannel {
     @Override
     public int write(ByteBuffer src) throws IOException {
 //        int count = 0;
-//        src.flip();
-//        while (src.hasRemaining()) {
-//            writeBuffer.put(src.get());
-//            count ++;
+//        if (src.hasRemaining()) {
+//            try {
+//                synchronized (writeBuffer) {
+//                    if (writeBuffer.hasRemaining()) {
+//                        writeBuffer.wait();
+//                    }
+//                    while (src.hasRemaining()) {
+//                        try {
+//                            writeBuffer.put(src.get());
+//                        } catch (Exception e) {
+//                            log.error("src {} buf {}", src, writeBuffer, e);
+//                        }
+//                        count++;
+//                    }
+//                }
+//            } catch (Exception e) {
+//                log.error("Failed to write to usb buffer, drop.", e);
+//            } finally {
+//                src.clear();
+//            }
 //        }
-//        src.compact();
 //        return count;
         int len;
         if (src.hasRemaining()) {
             len = src.remaining();
-//            try {
-                byte[] buf = new byte[len];
-                src.get(buf);
-//                pipeOut.syncSubmit(buf);
-                UsbIrp irp = pipeOut.createUsbIrp();
-                irp.setData(buf);
-                irp.setActualLength(len);
-                writeQueue.add(irp);
-//            } catch (UsbException e) {
-//                throw new IOException(e);
-//            }
+            byte[] buf = new byte[len];
+            src.get(buf);
+            UsbIrp irp = pipeOut.createUsbIrp();
+            irp.setData(buf);
+            irp.setActualLength(len);
+//            writeQueue.add(irp);
+            try {
+                pipeOut.asyncSubmit(irp);
+            } catch (UsbException e) {
+                log.error("Failed to async write to usb.", e);
+            }
         } else {
             len = 0;
         }
@@ -173,6 +213,7 @@ public class Accessory implements ByteChannel {
 
     @Override
     public void close() throws IOException {
+        running = false;
         try {
             usbInterface.release();
         } catch (UsbException e) {
