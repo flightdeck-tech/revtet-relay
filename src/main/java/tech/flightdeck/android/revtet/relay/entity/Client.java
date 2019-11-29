@@ -6,6 +6,7 @@ import tech.flightdeck.android.revtet.relay.network.*;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.channels.Selector;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -15,19 +16,21 @@ public class Client {
     private static int nextId = 0;
 
     private final int id;
-    private final UsbChannel clientChannel;
+    private final Accessory clientChannel;
     private final CloseListener<Client> closeListener;
 
     private final IPv4PacketBuffer clientToNetwork = new IPv4PacketBuffer();
     private final StreamBuffer networkToClient = new StreamBuffer(16 * IPv4Packet.MAX_PACKET_LENGTH);
+    private final Router router;
 
     private final List<PacketSource> pendingPacketSources = new ArrayList<>();
 
     private ByteBuffer pendingIdBuffer;
 
-    public Client(UsbChannel clientChannel, CloseListener<Client> closeListener) {
+    public Client(Accessory clientChannel, Selector selector, CloseListener<Client> closeListener) {
         id = nextId++;
         this.clientChannel = clientChannel;
+        router = new Router(this, selector);
         pendingIdBuffer = createIntBuffer(id);
 
         this.closeListener = closeListener;
@@ -45,7 +48,7 @@ public class Client {
         return id;
     }
 
-    private void processReceive() {
+    public void processReceive() {
         if (!read()) {
             close();
             return;
@@ -53,7 +56,7 @@ public class Client {
         pushToNetwork();
     }
 
-    private void processSend() {
+    public void processSend() {
         if (!write()) {
             close();
             return;
@@ -78,7 +81,11 @@ public class Client {
     }
 
     private void pushToNetwork() {
-
+        IPv4Packet packet;
+        while((packet = clientToNetwork.asIPv4Packet()) != null) {
+            router.sendToNetwork(packet);
+            clientToNetwork.next();
+        }
     }
 
     private boolean read() {
@@ -107,7 +114,7 @@ public class Client {
         }
     }
 
-    private boolean sendToClient(IPv4Packet packet) {
+    public boolean sendToClient(IPv4Packet packet) {
         if (networkToClient.remaining() < packet.getRawLength()) {
             log.warn("Client buffer full");
             return false;
@@ -115,5 +122,23 @@ public class Client {
         networkToClient.readFrom(packet.getRaw());
         //interests
         return true;
+    }
+
+    public void consume(PacketSource source) {
+        IPv4Packet packet = source.get();
+        if (sendToClient(packet)) {
+            source.next();
+            return;
+        }
+        assert !pendingPacketSources.contains(source);
+        pendingPacketSources.add(source);
+    }
+
+    public Router getRouter() {
+        return router;
+    }
+
+    public void cleanExpiredConnections() {
+        router.cleanExpiredConnections();
     }
 }

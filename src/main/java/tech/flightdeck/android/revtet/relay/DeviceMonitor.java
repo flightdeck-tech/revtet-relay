@@ -3,17 +3,23 @@ package tech.flightdeck.android.revtet.relay;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.EndianUtils;
 import tech.flightdeck.android.revtet.relay.entity.Accessory;
+import tech.flightdeck.android.revtet.relay.network.SelectionHandler;
+import tech.flightdeck.android.revtet.relay.network.TCPConnection;
+import tech.flightdeck.android.revtet.relay.network.UDPConnection;
 
 import javax.usb.*;
 import javax.usb.event.*;
+import java.io.IOException;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
 import java.util.*;
 
 @Slf4j
 public class DeviceMonitor implements UsbServicesListener {
-    private static final short[] ANDROID_VIDS = { 0x18D1, 0x0E8D };
-    private static final short ACCESSORY_VID = 0x18D1;
-    private static final short ACCESSORY_PID = 0x2D00;
-    private static final short ACCESSORY_ADB_PID = 0x2D01;
+    private static final short[] ANDROID_VIDS = { 0x18D1, 0x0E8D, 0x2717 };
+    public static final short ACCESSORY_VID = 0x18D1;
+    public static final short ACCESSORY_PID = 0x2D00;
+    public static final short ACCESSORY_ADB_PID = 0x2D01;
 
     private static final byte AOA_GET_PROTOCOL = 51;
     private static final byte AOA_SEND_IDENT = 52;
@@ -23,11 +29,55 @@ public class DeviceMonitor implements UsbServicesListener {
     private static final short AOA_STRING_VER_ID = 3;
     private static final short AOA_STRING_SER_ID = 5;
 
-    private Map<UsbDevice, Accessory> accessoryMap = new HashMap<UsbDevice, Accessory>();
+    private static final int CLEANING_INTERVAL = 60 * 1000;
 
-    public DeviceMonitor() throws UsbException {
+    private Map<UsbDevice, Accessory> accessoryMap = new Hashtable<>();
+
+    private Selector selector;
+    private Thread selectorThread;
+
+    static {
+        Arrays.sort(ANDROID_VIDS);
+    }
+
+    public DeviceMonitor() throws UsbException, IOException {
         UsbServices services = UsbHostManager.getUsbServices();
         services.addUsbServicesListener(this);
+        selector = Selector.open();
+        selectorThread = new Thread(() -> {
+            try {
+                long nextCleaningDeadline = System.currentTimeMillis() + Math.min(UDPConnection.IDLE_TIMEOUT, TCPConnection.IDLE_TIMEOUT);
+                while (true) {
+                    accessoryMap.forEach(((device, accessory) -> {
+                        accessory.processReceive();
+                        accessory.processSend();
+                    }));
+                    selector.selectNow();
+                    Set<SelectionKey> selectedKeys = selector.selectedKeys();
+
+                    long now = System.currentTimeMillis();
+                    if (now >= nextCleaningDeadline || selectedKeys.isEmpty()) {
+                        cleanUp();
+                        nextCleaningDeadline = now + CLEANING_INTERVAL;
+                    }
+
+                    for (SelectionKey selectedKey : selectedKeys) {
+                        SelectionHandler selectionHandler = (SelectionHandler)selectedKey.attachment();
+                        selectionHandler.onReady(selectedKey);
+                    }
+                    selectedKeys.clear();
+                }
+            } catch (IOException e) {
+                log.error("Error in selector thread.", e);
+            }
+        });
+        selectorThread.start();
+    }
+
+    private void cleanUp() {
+        accessoryMap.forEach(((device, accessory) -> {
+            accessory.cleanUp();
+        }));
     }
 
     public void usbDeviceAttached(UsbServicesEvent usbServicesEvent) {
@@ -51,7 +101,7 @@ public class DeviceMonitor implements UsbServicesListener {
     private void handleDevice(UsbDevice device) throws UsbException {
         if (isAndroid(device)) {
             if (isAccessory(device)) {
-                Accessory accessory = new Accessory(device);
+                Accessory accessory = new Accessory(device, selector);
                 accessoryMap.put(device, accessory);
             } else {
                 switchToAccessory(device);
